@@ -1,0 +1,53 @@
+version: "3"
+services:
+  mssql:
+    container_name: logistic-mysql
+    image: mysql
+    platform: linux/amd64
+    restart: always
+    environment:
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: [ "CMD", "mysqladmin" ,"ping", "-h", "localhost" ]
+      timeout: 20s
+      retries: 10
+    networks:
+      - logistic-system
+  redis:
+    container_name: logistic-redis
+    image: redis:alpine
+    restart: always
+    ports:
+      - "6379:6379"
+    # noinspection SpellCheckingInspection
+    command: redis-server --requirepass ${REDIS_REQUIREPASS}
+    networks:
+      - logistic-system
+  migration:
+    container_name: logistic-migration
+    build:
+      context: ..
+      dockerfile: taiwanPay/docker/Dockerfile.dev
+    image: logistic-api:dev
+    platform: linux/amd64
+    environment:
+      - DB_HOST=${MSSQL_HOST}
+      - DB_PORT=3306
+      - DB_USER=${MSSQL_USER}
+      - DB_PASSWORD=${MSSQL_PASSWORD}
+      - DB_NAME=${MSSQL_DATABASE}
+    working_dir: /go/src/go-logistic-system
+    depends_on:
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./taiwanPay:/go/src/third-party-payment/taiwanPay
+    # noinspection SpellCheckingInspection
+    command: go run database/migrate.go up
+    networks:
+      - taiwan-pay
+networks:
+  taiwan-pay:
