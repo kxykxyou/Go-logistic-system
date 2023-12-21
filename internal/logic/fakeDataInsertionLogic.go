@@ -1,13 +1,13 @@
 package logic
 
 import (
-	"fmt"
 	"gorm.io/gorm"
 	"logistic/internal/model"
 	"logistic/internal/svc"
 	"math/rand"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -18,8 +18,17 @@ type FakeDataInsertionLogic struct {
 	SvcCtx         *svc.Context
 }
 
-type FakeData struct {
-	FakeOrders          []*model.Order
+type FirstClassFakeData struct {
+	FakeLocations  []*model.Location
+	FakeRecipients []*model.Recipient
+	FakeProducts   []*model.Product
+}
+
+type SecondClassFakeData struct {
+	FakeOrders []*model.Order
+}
+
+type ThirdClassFakeData struct {
 	FakeLogisticDetails []*model.LogisticDetail
 }
 
@@ -39,59 +48,156 @@ func (logic FakeDataInsertionLogic) InsertFakeData() (result interface{}, e erro
 		return nil, err
 	}
 
-	fakeData := generateRandomData(num)
-
-	err = bulkInsertFakeData(logic.SvcCtx.DB, &fakeData)
-	if err != nil {
+	tx := logic.SvcCtx.DB.Begin()
+	firstClassFakeData := generateFirstClassRandomData()
+	if err := insertFirstClassFakeData(tx, &firstClassFakeData); err != nil {
+		tx.Rollback()
 		return nil, err
-	} else {
-		return fmt.Sprintf("%d rows inserted", num), nil
 	}
 
+	secondClassFakeData := generateSecondClassRandomData(tx, num)
+	if err := insertSecondClassFakeData(tx, &secondClassFakeData); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+
+	thirdClassFakeData := generateThirdClassRandomData(tx)
+	if err := insertThirdClassFakeData(tx, &thirdClassFakeData); err != nil {
+		tx.Rollback()
+		return nil, err
+	}
+	tx.Commit()
+	return "ok", nil
 }
 
-func generateRandomData(num int) FakeData {
-	var fakeOrders []*model.Order
-	var fakeLogisticDetails []*model.LogisticDetail
+func generateFirstClassRandomData() FirstClassFakeData {
 
-	for i := 0; i < num-1; i++ {
+	var fakeLocations []*model.Location
+	var fakeRecipients []*model.Recipient
+	var fakeProducts []*model.Product
+
+	for i := 1; i < 10; i++ {
+		s := strconv.FormatInt(int64(i), 10)
+		newLocation := model.Location{
+			Title:   "縣市" + s,
+			City:    "城市" + s,
+			Address: "地址" + s,
+		}
+		fakeLocations = append(fakeLocations, &newLocation)
+
+		newRecipient := model.Recipient{
+			Name:    "王" + s,
+			Address: strings.Repeat(s, 20),
+			Phone:   "09" + strings.Repeat(s, 8),
+		}
+		fakeRecipients = append(fakeRecipients, &newRecipient)
+
+		newProduct := model.Product{
+			Name: "商品" + s,
+		}
+		fakeProducts = append(fakeProducts, &newProduct)
+
+	}
+
+	return FirstClassFakeData{
+		FakeLocations:  fakeLocations,
+		FakeRecipients: fakeRecipients,
+		FakeProducts:   fakeProducts,
+	}
+}
+
+func generateSecondClassRandomData(tx *gorm.DB, num int) SecondClassFakeData {
+
+	var recipientIds []uint
+	tx.Model(&model.Recipient{}).Pluck("id", &recipientIds)
+
+	var productIds []uint
+	tx.Model(&model.Product{}).Pluck("id", &productIds)
+
+	var fakeOrders []*model.Order
+	for i := 1; i < num-1; i++ {
 		newOrder := model.Order{
-			RecipientId: uint(rand.Intn(4) + 1),
-			ProductId:   uint(rand.Intn(4) + 1),
+			RecipientId: recipientIds[rand.Intn(len(recipientIds))],
+			ProductId:   productIds[rand.Intn(len(productIds))],
 		}
 		fakeOrders = append(fakeOrders, &newOrder)
 	}
 
+	return SecondClassFakeData{
+		FakeOrders: fakeOrders,
+	}
+}
+
+func generateThirdClassRandomData(tx *gorm.DB) ThirdClassFakeData {
+
+	var locationIds []uint
+	tx.Model(&model.Location{}).Pluck("id", &locationIds)
+
+	var orderIds []uint
+	tx.Model(&model.Order{}).Pluck("id", &orderIds)
+
+	var fakeLogisticDetails []*model.LogisticDetail
 	dates := randDatesForAnOrder()
 	for i := 0; i < len(allStatus); i++ {
+		orderId := orderIds[rand.Intn(len(orderIds))]
+		locationId := locationIds[rand.Intn(len(locationIds))]
 		newDetail := model.LogisticDetail{
-			OrderId:    uint(rand.Intn(4) + 1),
-			LocationId: uint(rand.Intn(4) + 1),
+			OrderId:    orderId,
+			LocationId: locationId,
 			Date:       dates[i],
 			Status:     allStatus[i],
 		}
 		fakeLogisticDetails = append(fakeLogisticDetails, &newDetail)
+
 	}
 
-	return FakeData{
-		FakeOrders:          fakeOrders,
+	return ThirdClassFakeData{
 		FakeLogisticDetails: fakeLogisticDetails,
 	}
 }
 
-func bulkInsertFakeData(db *gorm.DB, fakeData *FakeData) error {
-	tx := db.Begin()
+func insertFirstClassFakeData(tx *gorm.DB, firstClassFakeData *FirstClassFakeData) error {
+	//if tx.Find(&model.Recipient{}).RowsAffected != 0 ||
+	//	tx.Find(&model.Product{}).RowsAffected != 0 ||
+	//	tx.Find(&model.Location{}).RowsAffected != 0 {
+	//	return nil
+	//}
 
-	if result := tx.Create(&fakeData.FakeOrders); result.Error != nil {
-		tx.Rollback()
+	if result := tx.Create(&firstClassFakeData.FakeLocations); result.Error != nil {
 		return result.Error
 	}
-	if result := tx.Create(&fakeData.FakeLogisticDetails); result.Error != nil {
-		tx.Rollback()
+	if result := tx.Create(&firstClassFakeData.FakeRecipients); result.Error != nil {
+		return result.Error
+	}
+	if result := tx.Create(&firstClassFakeData.FakeProducts); result.Error != nil {
 		return result.Error
 	}
 
-	return tx.Commit().Error
+	return nil
+}
+
+func insertSecondClassFakeData(tx *gorm.DB, secondClassFakeData *SecondClassFakeData) error {
+	//if tx.Find(&model.Recipient{}).RowsAffected == 0 || tx.Find(&model.Product{}).RowsAffected == 0 {
+	//	return errors.New("not enough number of recipient or product in database")
+	//}
+
+	if result := tx.Create(&secondClassFakeData.FakeOrders); result.Error != nil {
+		return result.Error
+	}
+
+	return nil
+}
+
+func insertThirdClassFakeData(tx *gorm.DB, thirdClassFakeData *ThirdClassFakeData) error {
+	//if tx.Find(&model.Order{}).RowsAffected == 0 || tx.Find(&model.Location{}).RowsAffected == 0 {
+	//	return errors.New("not enough number of order or location in database")
+	//}
+
+	if result := tx.Create(&thirdClassFakeData.FakeLogisticDetails); result.Error != nil {
+		return result.Error
+	}
+
+	return nil
 }
 
 func randDatesForAnOrder() []time.Time {

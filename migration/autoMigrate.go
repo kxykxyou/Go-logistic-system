@@ -11,7 +11,6 @@ import (
 
 func main() {
 	ctx := config.GetConfigCtx()
-	fmt.Printf("%s", ctx.DB.PORT)
 
 	autoMigrate(ctx.DB.HOST, ctx.DB.PORT, ctx.DB.USER, ctx.DB.PASSWORD, ctx.DB.DBNAME)
 
@@ -28,5 +27,8 @@ func autoMigrate(host string, port string, user string, password string, name st
 
 	if err := db.AutoMigrate(&model.Location{}, &model.Product{}, &model.Recipient{}, &model.Order{}, &model.LogisticDetail{}); err != nil {
 		fmt.Println(err)
+	} else {
+		fmt.Println("schema created!")
 	}
+
 }

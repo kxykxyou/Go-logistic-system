@@ -12,14 +12,14 @@ func main() {
 
 	c := config.GetConfigCtx()
 
+	c.RestConf.Port = 8888
 	server := rest.MustNewServer(c.RestConf)
 	defer server.Stop()
 
 	svcCtx := svc.GetInitSvcContext()
 
 	handler.RegisterHandler(server, &svcCtx)
+	fmt.Println(`running server at port 8888.`)
 	server.Start()
-
-	fmt.Println(`running server at port 9101`)
 
 }
